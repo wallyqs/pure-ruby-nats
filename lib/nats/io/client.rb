@@ -607,7 +607,9 @@ module NATS
         start_time = Time.now
         yield
         end_time = Time.now
-        raise NATS::IO::Timeout.new if end_time - start_time > timeout
+        duration = end_time - start_time
+        p duration
+        raise NATS::IO::Timeout.new if duration > timeout
       end
 
       # Handles errors from reading, parsing the protocol or stale connection.

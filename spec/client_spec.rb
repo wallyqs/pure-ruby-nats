@@ -158,7 +158,7 @@ describe 'Client - Specification' do
     nc.connect(:servers => ["nats://127.0.0.1:4222"])
 
     expect do
-      nc.request("hello", "timeout", timeout: 1)
+      nc.request("hi", "timeout", timeout: 1)
     end.to raise_error(NATS::IO::Timeout)
 
     nc.close
