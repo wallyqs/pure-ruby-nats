@@ -299,11 +299,14 @@ module NATS
         @flush_queue << :sub
         unsubscribe(sid, 1)
 
-        # Publish the request and wait for the response...
-        publish(subject, payload, inbox)
         sub.synchronize do
+          # Publish the request and then wait for the response...
+          publish(subject, payload, inbox)
+
           with_nats_timeout(timeout) do
+            p "--- #{Time.now.to_f} - yielding: #{future}"
             future.wait(timeout)
+            p "--- #{Time.now.to_f} - yield!: #{future}"
           end
         end
         response = sub.response
@@ -329,11 +332,13 @@ module NATS
       def flush(timeout=60)
         # Schedule sending a PING, and block until we receive PONG back,
         # or raise a timeout in case the response is past the deadline.
-        @pending_queue << PING_REQUEST
-        @flush_queue << :ping
         pong = @pongs.new_cond
         @pongs.synchronize do
           @pongs << pong
+
+          # Flush once pong future has been prepared
+          @pending_queue << PING_REQUEST
+          @flush_queue << :ping
           with_nats_timeout(timeout) do
             pong.wait(timeout)
           end
@@ -392,13 +397,32 @@ module NATS
         return unless sub
 
         # Check for auto_unsubscribe
-        sub.received += 1
-        if sub.max
-          # Client side support in case server did not receive unsubscribe
-          return unsubscribe(sid) if sub.received > sub.max
+        sub.synchronize do
+          p "SUB[#{sid}] === #{subject} --- #{data} --- #{sub.future}"
+          sub.received += 1
+          if sub.max
+            case
+            when sub.received > sub.max
+              # Client side support in case server did not receive unsubscribe
+              unsubscribe(sid)
+              return
+            when sub.received == sub.max
+              # Cleanup here if we have hit the max..
+              @subs.delete(sid)
+            end
+          end
 
-          # Cleanup here if we have hit the max..
-          @subs.delete(sid) if sub.received == sub.max
+          # In case of a request which requires a future
+          # do so here already while holding the lock and return
+          if sub.future
+            future = sub.future
+            puts "=== fut (1) :: #{Time.now.to_f} - #{future}"
+            sub.response = Msg.new(subject, reply, data)
+            future.signal
+            puts "=== fut (2) :: #{Time.now.to_f} - #{future}"
+
+            return
+          end
         end
 
         # Distinguish between async subscriptions with callbacks
@@ -410,12 +434,6 @@ module NATS
           when 1 then cb.call(data)
           when 2 then cb.call(data, reply)
           else cb.call(data, reply, subject)
-          end
-        elsif sub.future
-          sub.synchronize do
-            future = sub.future
-            sub.response = Msg.new(subject, reply, data)
-            future.signal
           end
         end
       end
@@ -608,7 +626,6 @@ module NATS
         yield
         end_time = MonotonicTime.now
         duration = end_time - start_time
-        p duration
         raise NATS::IO::Timeout.new if duration > timeout
       end
 
@@ -674,7 +691,7 @@ module NATS
 
             # TODO: Remove timeout and just wait to be ready
             data = @io.read(MAX_SOCKET_READ_BYTES)
-            @parser.parse(data)
+            @parser.parse(data) if data
           rescue Errno::ETIMEDOUT
             # FIXME: We do not really need a timeout here...
             retry
@@ -905,7 +922,8 @@ module NATS
       attr_accessor :socket
 
       # Exceptions raised during non-blocking I/O ops that require retrying the op
-      IO_EXCEPTIONS = [Errno::EWOULDBLOCK, Errno::EAGAIN, ::IO::WaitReadable]
+      NBIO_READ_EXCEPTIONS  = [Errno::EWOULDBLOCK, Errno::EAGAIN, ::IO::WaitReadable]
+      NBIO_WRITE_EXCEPTIONS = [Errno::EWOULDBLOCK, Errno::EAGAIN, ::IO::WaitWritable]
 
       def initialize(options={})
         @uri = options[:uri]
@@ -938,15 +956,29 @@ module NATS
 
       def read(max_bytes, deadline=nil)
         begin
-          @socket.read_nonblock(max_bytes)
-        rescue *IO_EXCEPTIONS
+          data = @socket.read_nonblock(max_bytes)
+          return data
+        rescue *NBIO_READ_EXCEPTIONS
           if ::IO.select([@socket], nil, nil, deadline)
             retry
           else
             raise Errno::ETIMEDOUT
           end
+        rescue *NBIO_WRITE_EXCEPTIONS
+          if ::IO.select(nil, [@socket], nil, deadline)
+            retry
+          else
+            raise Errno::ETIMEDOUT
+          end
         end
-      rescue EOFError
+      rescue EOFError => e
+        p "!!!!!!!!!!!!! READING ERROR: #{e.message} || #{e.inspect}"
+        if RUBY_ENGINE == 'jruby' and e.message == 'No message available'
+          # FIXME: <EOFError: No message available> can happen in jruby
+          # even though seems it is temporary and eventually possible
+          # to read from socket.
+          return nil
+        end
         raise Errno::ECONNRESET
       end
 
@@ -961,8 +993,14 @@ module NATS
             total_written += written
             break total_written if total_written >= length
             data = data.byteslice(written..-1)
-          rescue *IO_EXCEPTIONS
+          rescue *NBIO_WRITE_EXCEPTIONS
             if ::IO.select(nil, [@socket], nil, deadline)
+              retry
+            else
+              raise Errno::ETIMEDOUT
+            end
+          rescue *NBIO_READ_EXCEPTIONS => e
+            if ::IO.select([@socket], nil, nil, deadline)
               retry
             else
               raise Errno::ETIMEDOUT
@@ -1029,11 +1067,12 @@ module NATS
   # https://github.com/ruby-concurrency/concurrent-ruby/
   class MonotonicTime
     class << self
-      if defined?(Process::CLOCK_MONOTONIC)
+      case
+      when defined?(Process::CLOCK_MONOTONIC)
         def now
           Process.clock_gettime(Process::CLOCK_MONOTONIC)
         end
-      elsif RUBY_ENGINE == 'jruby'
+      when RUBY_ENGINE == 'jruby'
         def now
           java.lang.System.nanoTime() / 1_000_000_000.0
         end
