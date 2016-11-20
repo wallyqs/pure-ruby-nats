@@ -604,9 +604,9 @@ module NATS
       end
 
       def with_nats_timeout(timeout)
-        start_time = Time.now
+        start_time = MonotonicTime.now
         yield
-        end_time = Time.now
+        end_time = MonotonicTime.now
         duration = end_time - start_time
         p duration
         raise NATS::IO::Timeout.new if duration > timeout
@@ -1024,5 +1024,21 @@ module NATS
       @max      = nil
     end
   end
-end
 
+  class MonotonicTime
+    class << self
+      if defined?(Process::CLOCK_MONOTONIC)
+        def now
+          Process.clock_gettime(Process::CLOCK_MONOTONIC)
+        end
+      elsif RUBY_ENGINE == 'jruby'
+        def now
+          java.lang.System.nanoTime() / 1_000_000_000.0
+        end
+      else
+        # Fallback to regular time behavior
+        ::Time.now.to_f
+      end
+    end
+  end
+end
