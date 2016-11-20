@@ -82,10 +82,13 @@ describe 'Client - Specification' do
     nc.flush
 
     responses = []
-    nc.request("help", "please", :max => 2) do |msg|
+    nc.request("help", "please", max: 2) do |msg|
       responses << msg
-      mon.synchronize do
-        done.signal
+
+      if responses.count == 2
+        mon.synchronize do
+          done.signal
+        end
       end
     end
 
