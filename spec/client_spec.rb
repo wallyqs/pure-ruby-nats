@@ -136,9 +136,10 @@ describe 'Client - Specification' do
       sid = nc.subscribe("quux.#{n}") do |msg, reply, subject|
         msgs[subject] << msg
       end
+      nc.flush
       msgs["quux.#{sid}"] = []
     end
-    nc.flush
+    #nc.flush
 
     expect(msgs.keys.count).to eql(100)
     1.upto(100).each do |n|

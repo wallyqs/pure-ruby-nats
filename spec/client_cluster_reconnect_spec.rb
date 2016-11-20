@@ -140,8 +140,6 @@ describe 'Client - Cluster reconnect' do
   end
 
   it 'should gracefully reconnect to another available server while publishing' do
-    skip "temporarily skip"
-
     @s3.kill_server
 
     mon = Monitor.new

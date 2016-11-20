@@ -1025,7 +1025,7 @@ module NATS
     end
   end
 
-  # Implementation how MonotonicTime is implemented
+  # Implementation of MonotonicTime adapted from
   # https://github.com/ruby-concurrency/concurrent-ruby/
   class MonotonicTime
     class << self
