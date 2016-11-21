@@ -304,9 +304,7 @@ module NATS
           publish(subject, payload, inbox)
 
           with_nats_timeout(timeout) do
-            p "--- #{Time.now.to_f} - yielding: #{future}"
             future.wait(timeout)
-            p "--- #{Time.now.to_f} - yield!: #{future}"
           end
         end
         response = sub.response
@@ -398,7 +396,6 @@ module NATS
 
         # Check for auto_unsubscribe
         sub.synchronize do
-          p "SUB[#{sid}] === #{subject} --- #{data} --- #{sub.future}"
           sub.received += 1
           if sub.max
             case
@@ -416,10 +413,8 @@ module NATS
           # do so here already while holding the lock and return
           if sub.future
             future = sub.future
-            puts "=== fut (1) :: #{Time.now.to_f} - #{future}"
             sub.response = Msg.new(subject, reply, data)
             future.signal
-            puts "=== fut (2) :: #{Time.now.to_f} - #{future}"
 
             return
           end
@@ -626,7 +621,7 @@ module NATS
         yield
         end_time = MonotonicTime.now
         duration = end_time - start_time
-        raise NATS::IO::Timeout.new if duration > timeout
+        raise NATS::IO::Timeout.new("nats: timeout") if duration > timeout
       end
 
       # Handles errors from reading, parsing the protocol or stale connection.
@@ -880,15 +875,15 @@ module NATS
       def start_threads!
         # Reading loop for gathering data
         @read_loop_thread = Thread.new { read_loop }
-        @read_loop_thread.abort_on_exception = true
+        # @read_loop_thread.abort_on_exception = true
 
         # Flusher loop for sending commands
         @flusher_thread = Thread.new { flusher_loop }
-        @flusher_thread.abort_on_exception = true
+        # @flusher_thread.abort_on_exception = true
 
         # Ping interval handling for keeping alive the connection
         @ping_interval_thread = Thread.new { ping_interval_loop }
-        @ping_interval_thread.abort_on_exception = true
+        # @ping_interval_thread.abort_on_exception = true
       end
 
       def can_reuse_server?(server)
@@ -956,8 +951,7 @@ module NATS
 
       def read(max_bytes, deadline=nil)
         begin
-          data = @socket.read_nonblock(max_bytes)
-          return data
+          return @socket.read_nonblock(max_bytes)
         rescue *NBIO_READ_EXCEPTIONS
           if ::IO.select([@socket], nil, nil, deadline)
             retry
@@ -972,7 +966,6 @@ module NATS
           end
         end
       rescue EOFError => e
-        p "!!!!!!!!!!!!! READING ERROR: #{e.message} || #{e.inspect}"
         if RUBY_ENGINE == 'jruby' and e.message == 'No message available'
           # FIXME: <EOFError: No message available> can happen in jruby
           # even though seems it is temporary and eventually possible
