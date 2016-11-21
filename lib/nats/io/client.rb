@@ -875,15 +875,15 @@ module NATS
       def start_threads!
         # Reading loop for gathering data
         @read_loop_thread = Thread.new { read_loop }
-        # @read_loop_thread.abort_on_exception = true
+        @read_loop_thread.abort_on_exception = true
 
         # Flusher loop for sending commands
         @flusher_thread = Thread.new { flusher_loop }
-        # @flusher_thread.abort_on_exception = true
+        @flusher_thread.abort_on_exception = true
 
         # Ping interval handling for keeping alive the connection
         @ping_interval_thread = Thread.new { ping_interval_loop }
-        # @ping_interval_thread.abort_on_exception = true
+        @ping_interval_thread.abort_on_exception = true
       end
 
       def can_reuse_server?(server)
