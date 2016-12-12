@@ -977,8 +977,10 @@ module NATS
       end
 
       def connect
-        addrinfo = ::Socket.getaddrinfo(@uri.host, nil, ::Socket::AF_UNSPEC, ::Socket::SOCK_STREAM)
-        addrinfo.each_with_index do |ai, i|
+        addrinfo = ::Addrinfo.getaddrinfo(@uri.host, nil, ::Socket::AF_UNSPEC, ::Socket::SOCK_STREAM)
+
+        # Start attempting to connect to ipv6 addresses first
+        addrinfo.sort_by { |ai| ai.ipv6? ? -1 : 1 }.each_with_index do |ai, i|
           begin
             @socket = connect_addrinfo(ai, @uri.port, @connect_timeout)
             break
@@ -1065,8 +1067,8 @@ module NATS
       private
 
       def connect_addrinfo(ai, port, timeout)
-        sock = ::Socket.new(::Socket.const_get(ai[0]), ::Socket::SOCK_STREAM, 0)
-        sockaddr = ::Socket.pack_sockaddr_in(port, ai[3])
+        sock = ::Socket.new(ai.pfamily, ::Socket::SOCK_STREAM, 0)
+        sockaddr = ::Socket.pack_sockaddr_in(port, ai.ip_address)
 
         begin
           sock.connect_nonblock(sockaddr)
