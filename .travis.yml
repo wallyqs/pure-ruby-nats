@@ -1,7 +1,8 @@
 rvm:
   - 2.2
-  - 2.3.2
-  - 2.4.0
+  - 2.3.5
+  - 2.4.3
+  - 2.5.0  
   - ruby-head
 
 cache:
@@ -24,9 +25,6 @@ matrix:
       jdk: openjdk7
     - rvm: jruby
       env: JRUBY_OPTS='--server -Xcompile.invokedynamic=false' JAVA_OPTS='-Djava.security.egd=file:///dev/urandom'
-      jdk: oraclejdk7
-    - rvm: jruby
-      env: JRUBY_OPTS='--server -Xcompile.invokedynamic=false' JAVA_OPTS='-Djava.security.egd=file:///dev/urandom'
       jdk: openjdk8
     - rvm: jruby
       env: JRUBY_OPTS='--server -Xcompile.invokedynamic=false' JAVA_OPTS='-Djava.security.egd=file:///dev/urandom'
@@ -35,9 +33,6 @@ matrix:
     - rvm: jruby
       env: JRUBY_OPTS='--server -Xcompile.invokedynamic=false' JAVA_OPTS='-Djava.security.egd=file:///dev/urandom'
       jdk: openjdk7
-    - rvm: jruby
-      env: JRUBY_OPTS='--server -Xcompile.invokedynamic=false' JAVA_OPTS='-Djava.security.egd=file:///dev/urandom'
-      jdk: oraclejdk7
     - rvm: jruby
       env: JRUBY_OPTS='--server -Xcompile.invokedynamic=false' JAVA_OPTS='-Djava.security.egd=file:///dev/urandom'
       jdk: openjdk8
