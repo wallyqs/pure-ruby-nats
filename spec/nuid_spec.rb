@@ -29,7 +29,7 @@ describe 'NUID' do
   end
 
   it "should be unique after 1M entries" do
-    total = 1_000_000
+    total = 10_000_000
     entries = []
     nuid = NATS::NUID.new
     total.times do

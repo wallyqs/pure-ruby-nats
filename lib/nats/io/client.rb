@@ -393,6 +393,7 @@ module NATS
 
           # Create token for this request.
           token = @nuid.next
+          # puts token
           inbox = "#{@resp_sub_prefix}.#{token}"
 
           # Create the a future for the request that will
