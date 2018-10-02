@@ -7,3 +7,5 @@ group :test do
   gem 'rspec'
   gem 'benchmark-ips'
 end
+
+gem 'nkeys', :path => 'ruby-nkeys'

@@ -21,6 +21,8 @@ require 'json'
 require 'monitor'
 require 'uri'
 require 'securerandom'
+require 'nkeys'
+require 'base64'
 
 begin
   require "openssl"
@@ -770,9 +772,26 @@ module NATS
           :pedantic => @options[:pedantic],
           :lang     => NATS::IO::LANG,
           :version  => NATS::IO::VERSION,
-          :protocol => NATS::IO::PROTOCOL
+          :protocol => NATS::IO::PROTOCOL,
+          :echo => !@options[:no_echo]
         }
         cs[:name] = @options[:name] if @options[:name]
+        cs[:account] = @options[:account] if @options[:account]
+
+        # If server sent a nonce then need to sign and include public key.
+        begin
+          if @server_info[:nonce] and @options[:nkeys]
+            kp = NATS::NKEYS::from_seed(@options[:nkeys])
+            cs[:nkey] = kp.public_key
+
+            # Sign the nonce sent by server.
+            raw_signed = kp.sign(@server_info[:nonce])
+            encoded_sig = Base64.strict_encode64(raw_signed)
+            cs[:sig] = encoded_sig
+          end
+        rescue => e
+          p e
+        end
 
         if auth_connection?
           if @uri.password
