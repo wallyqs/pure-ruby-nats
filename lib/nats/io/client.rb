@@ -14,6 +14,7 @@
 
 require 'nats/io/parser'
 require 'nats/io/version'
+require 'nats/io/js'
 require 'nats/nuid'
 require 'thread'
 require 'socket'
@@ -29,7 +30,6 @@ end
 
 module NATS
   module IO
-
     DEFAULT_PORT = 4222
     DEFAULT_URI = "nats://localhost:#{DEFAULT_PORT}".freeze
 
@@ -512,7 +512,7 @@ module NATS
         response
       end
 
-      # Makes a NATS request using a NATS::Msg that may include headers.
+      # request_msg makes a NATS request using a NATS::Msg that may include headers.
       def request_msg(msg, opts={})
         raise TypeError, "nats: expected NATS::Msg, got #{msg.class.name}" unless msg.is_a?(Msg)
         raise BadSubject if !msg.subject or msg.subject.empty?
@@ -789,61 +789,7 @@ module NATS
         end
 
         hdr
-      end
-
-      def process_info(line)
-        parsed_info = JSON.parse(line)
-
-        # INFO can be received asynchronously too,
-        # so has to be done under the lock.
-        synchronize do
-          # Symbolize keys from parsed info line
-          @server_info = parsed_info.reduce({}) do |info, (k,v)|
-            info[k.to_sym] = v
-
-            info
-          end
-
-          # Detect any announced server that we might not be aware of...
-          connect_urls = @server_info[:connect_urls]
-          if connect_urls
-            srvs = []
-            connect_urls.each do |url|
-              scheme = client_using_secure_connection? ? "tls" : "nats"
-              u = URI.parse("#{scheme}://#{url}")
-
-              # Skip in case it is the current server which we already know
-              next if @uri.host == u.host && @uri.port == u.port
-
-              present = server_pool.detect do |srv|
-                srv[:uri].host == u.host && srv[:uri].port == u.port
-              end
-
-              if not present
-                # Let explicit user and pass options set the credentials.
-                u.user = options[:user] if options[:user]
-                u.password = options[:pass] if options[:pass]
-
-                # Use creds from the current server if not set explicitly.
-                if @uri
-                  u.user ||= @uri.user if @uri.user
-                  u.password ||= @uri.password if @uri.password
-                end
-
-                # NOTE: Auto discovery won't work here when TLS host verification is enabled.
-                srv = { :uri => u, :reconnect_attempts => 0, :discovered => true, :hostname => u.host }
-                srvs << srv
-              end
-            end
-            srvs.shuffle! unless @options[:dont_randomize_servers]
-
-            # Include in server pool but keep current one as the first one.
-            server_pool.push(*srvs)
-          end
-        end
-
-        @server_info
-      end
+      end     
 
       # Close connection to NATS, flushing in case connection is alive
       # and there are any pending messages, should not be used while
@@ -898,7 +844,65 @@ module NATS
         end
       end
 
+      def jetstream(opts={})
+        ::NATS::JetStream.new(self, opts)
+      end
+
       private
+
+      def process_info(line)
+        parsed_info = JSON.parse(line)
+
+        # INFO can be received asynchronously too,
+        # so has to be done under the lock.
+        synchronize do
+          # Symbolize keys from parsed info line
+          @server_info = parsed_info.reduce({}) do |info, (k,v)|
+            info[k.to_sym] = v
+
+            info
+          end
+
+          # Detect any announced server that we might not be aware of...
+          connect_urls = @server_info[:connect_urls]
+          if connect_urls
+            srvs = []
+            connect_urls.each do |url|
+              scheme = client_using_secure_connection? ? "tls" : "nats"
+              u = URI.parse("#{scheme}://#{url}")
+
+              # Skip in case it is the current server which we already know
+              next if @uri.host == u.host && @uri.port == u.port
+
+              present = server_pool.detect do |srv|
+                srv[:uri].host == u.host && srv[:uri].port == u.port
+              end
+
+              if not present
+                # Let explicit user and pass options set the credentials.
+                u.user = options[:user] if options[:user]
+                u.password = options[:pass] if options[:pass]
+
+                # Use creds from the current server if not set explicitly.
+                if @uri
+                  u.user ||= @uri.user if @uri.user
+                  u.password ||= @uri.password if @uri.password
+                end
+
+                # NOTE: Auto discovery won't work here when TLS host verification is enabled.
+                srv = { :uri => u, :reconnect_attempts => 0, :discovered => true, :hostname => u.host }
+                srvs << srv
+              end
+            end
+            srvs.shuffle! unless @options[:dont_randomize_servers]
+
+            # Include in server pool but keep current one as the first one.
+            server_pool.push(*srvs)
+          end
+        end
+
+        @server_info
+      end
 
       def select_next_server
         raise NoServersError.new("nats: No servers available") if server_pool.empty?
@@ -1730,6 +1734,10 @@ module NATS
     def respond_msg(msg)
       return unless self.nc
       self.nc.publish_msg(msg)
+    end
+
+    def to_s
+      "#<NATS::Msg(subject: #{self.subject}, reply: #{self.reply}, data: '#{self.data.slice(0, 10)}')>"
     end
   end
 
